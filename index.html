@@ -205,6 +205,30 @@ textarea{width:100%;min-height:9rem;resize:vertical;border:1px solid var(--line)
 .install b{display:block;font-family:var(--f-display);font-weight:400;font-size:1.05rem;color:var(--accent)}
 .install-x{position:absolute;top:.4rem;right:.4rem;background:none;border:0;font-size:1.3rem;color:var(--muted);width:2rem;height:2rem}
 .toast{position:fixed;left:50%;bottom:calc(5rem + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:.55rem 1rem;border-radius:999px;font-size:.85rem;z-index:50}
+/* Plan, today, backup, consolation/desolation */
+.hero-l .linkbtn{align-self:flex-start}
+.linkbtn{background:none;border:0;padding:0;color:var(--accent);text-decoration:underline;text-underline-offset:.2em;font-size:.85rem}
+.opts{display:grid;gap:.5rem}
+.opt{text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:.8rem 1rem;display:flex;flex-direction:column;gap:.15rem}
+.opt b{font-family:var(--f-display);font-weight:400;font-size:1.15rem}
+.opt span{font-size:.82rem;color:var(--muted);line-height:1.55}
+.opt.on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.opt.on b{color:var(--accent)}
+.install .row .btn{font-size:.85rem}
+.moods{display:flex;flex-wrap:wrap;gap:.4rem;margin:0 0 1rem}
+.mood{border:1px solid var(--line);background:var(--bg);border-radius:999px;padding:.4rem .95rem;font-size:.9rem}
+.mood.on[data-m="c"]{background:var(--ok);border-color:var(--ok);color:var(--surface)}
+.mood.on[data-m="n"]{background:var(--muted);border-color:var(--muted);color:var(--surface)}
+.mood.on[data-m="d"]{background:var(--wine);border-color:var(--wine);color:var(--surface)}
+.counsel{border-left:3px solid var(--accent);background:var(--accent-soft);border-radius:0 10px 10px 0;padding:.85rem 1rem;margin:0 0 1rem;font-family:var(--f-body);font-size:.95rem;line-height:1.85;color:var(--ink)}
+.counsel h5{font-family:var(--f-display);font-weight:400;font-size:1.1rem;margin:0 0 .35rem;color:var(--accent)}
+.counsel p{margin:.3rem 0;text-align:left}
+.counsel ul{margin:.3rem 0 .5rem;padding-left:1.2em;color:var(--ink)}
+.counsel li{margin-bottom:.3rem}
+.chip{display:inline-block;font-family:var(--f-ui);font-size:.72rem;border-radius:999px;padding:.05rem .55rem;margin-right:.45rem;vertical-align:.1em}
+.chip.c{background:var(--ok);color:var(--surface)}
+.chip.n{background:var(--sunk);color:var(--muted)}
+.chip.d{background:var(--wine);color:var(--surface)}
 @media (prefers-reduced-motion:no-preference){.view{animation:in .35s ease both}@keyframes in{from{opacity:.4;transform:translateY(6px)}to{opacity:1;transform:none}}}
 </style>
 
@@ -242,13 +266,27 @@ const store = {
 let done = store.get('done', {});          // {lessonId: isoDate}
 let journal = store.get('journal', {});    // {lessonId: {text, at}}
 let fs = store.get('fs', 1.0625);
+let plan = store.get('plan', null);       // {set, pace, start}
 // migrate v1 keys ("01") to set-scoped keys ("1-01")
 [['done',done],['journal',journal]].forEach(([k,o])=>{ let ch=false; Object.keys(o).forEach(id=>{ if(!id.includes('-')){ o['1-'+id]=o[id]; delete o[id]; ch=true; } }); if(ch) store.set(k,o); });
 document.documentElement.style.setProperty('--fs', fs+'rem');
 
 const esc = s => String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const doneCount = (arr=L) => arr.filter(l=>done[l.id]).length;
-const nextLesson = () => L.find(l=>!done[l.id]) || L[L.length-1];
+const planSet = () => (plan && SETS.find(s=>s.id===plan.set)) || SETS[0];
+const nextLesson = () => { const arr = plan ? planSet().lessons : L; return arr.find(l=>!done[l.id]) || arr[arr.length-1]; };
+const DAY = 864e5;
+const startOfDay = t => { const x=new Date(t); x.setHours(0,0,0,0); return x.getTime(); };
+const weekStart = t => { const x=new Date(startOfDay(t)); x.setDate(x.getDate()-((x.getDay()+6)%7)); return x.getTime(); };
+const PACES = {
+  retreat:{name:'退省', desc:'幾天完全獻給天主，遠離外在干擾；每天做三篇。', per:3, unit:'day'},
+  daily:{name:'日常生活・每天', desc:'在日常生活中，每天一小時，做一篇。', per:1, unit:'day'},
+  week3:{name:'日常生活・每週三天', desc:'每週至少三天，每次一小時，做一篇。', per:3, unit:'week'}
+};
+const MOODS = [{k:'c', name:'神慰'}, {k:'n', name:'沒有明顯感受'}, {k:'d', name:'神枯'}];
+const MOOD_NAME = {c:'神慰', n:'平淡', d:'神枯'};
+const moodChip = m => m ? `<span class="chip ${m}">${MOOD_NAME[m]}</span>` : '';
+const RULES = L.find(l=>/辨別神類/.test(l.title));
 const fmtDate = iso => { const d=new Date(iso); return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`; };
 const lessonKind = l => l.kind;
 const setNext = s => s.lessons.find(l=>!done[l.id]);
@@ -256,11 +294,58 @@ const CHECK = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke
 
 function toast(msg){ const t=document.createElement('div'); t.className='toast'; t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(),1800); }
 
-function showInstallHint(){
-  if(!window.SE_PWA) return false;
+/* ---------- install & backup ---------- */
+let bip = null;   // Android/Chrome install prompt
+window.addEventListener('beforeinstallprompt', e=>{ e.preventDefault(); bip=e; if(current && current.view==='home') render(); });
+function installMode(){
+  if(!window.SE_PWA) return null;
   const ios=/iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
   const standalone=window.navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
-  return ios && !standalone && !store.get('hideInstall',0);
+  if(standalone) return null;
+  if(Date.now()-(+store.get('hideInstall',0)||0) < 7*DAY) return null;   // dismissed: ask again after a week
+  if(bip) return 'prompt';
+  return ios ? 'ios' : null;
+}
+const pad2 = n => String(n).padStart(2,'0');
+const lastBackupText = () => { const b=store.get('lastBackup',null); return b ? `上次備份：${fmtDate(b)}` : '還沒有備份過'; };
+function needBackup(){
+  const n=L.filter(l=>journal[l.id] && (journal[l.id].text||'').trim()).length;
+  if(!n) return 0;
+  const b=store.get('lastBackup',null);
+  if(b && Date.now()-new Date(b).getTime() < 14*DAY) return 0;
+  if(!b && n<3) return 0;
+  if(Date.now()-(+store.get('backupNag',0)||0) < 7*DAY) return 0;
+  return n;
+}
+async function exportBackup(){
+  const d=new Date(), name=`神操筆記備份-${d.getFullYear()}${pad2(d.getMonth()+1)}${pad2(d.getDate())}.json`;
+  const data={app:'shencao', v:1, at:d.toISOString(), done, journal, plan};
+  const blob=new Blob([JSON.stringify(data,null,1)], {type:'application/json'});
+  const ok=()=>{ store.set('lastBackup', new Date().toISOString()); toast('已備份'); render(); };
+  // Inside the claude.ai artifact viewer, files go through the platform's downloads capability
+  if(window.claude && typeof window.claude.use==='function'){
+    let dl=null; try{ dl = await window.claude.use('downloads'); }catch(e){}
+    if(dl){ try{ await dl.save({filename:name, data:blob}); ok(); }catch(e){ if(!e || e.code!=='declined') toast('無法在這裡備份，請改用「複製全部」'); } return; }
+  }
+  try{
+    const f=new File([blob], name, {type:'application/json'});
+    if(navigator.canShare && navigator.canShare({files:[f]})){ await navigator.share({files:[f], title:'神操筆記備份'}); ok(); return; }
+  }catch(e){ if(e && e.name==='AbortError') return; }
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 1500); ok();
+}
+function importBackup(file){
+  const r=new FileReader();
+  r.onload=()=>{ try{
+    const d=JSON.parse(r.result); if(!d || d.app!=='shencao') throw new Error('not a backup');
+    let nj=0, nd=0;
+    Object.entries(d.journal||{}).forEach(([id,e])=>{ const cur=journal[id]; if(e && (!cur || (e.at||'')>(cur.at||''))){ journal[id]=e; nj++; } });
+    Object.entries(d.done||{}).forEach(([id,at])=>{ if(!done[id]){ done[id]=at; nd++; } });
+    if(d.plan && !plan){ plan=d.plan; store.set('plan',plan); }
+    store.set('journal',journal); store.set('done',done);
+    toast(`已還原 ${nj} 篇筆記、${nd} 篇進度`); render();
+  }catch(e){ toast('這不是神操的備份檔'); } };
+  r.readAsText(file);
 }
 /* ---------- router ---------- */
 let current = {view:'home'};
@@ -279,17 +364,60 @@ function setFs(d){ fs=Math.min(1.5,Math.max(.9,+(fs+d).toFixed(4))); document.do
 
 function render(){
   const v=current.view;
-  const tabOf = {home:'home', what:'home', how:'home', course:'course', lesson:'course', journal:'journal'}[v];
+  const tabOf = {home:'home', plan:'home', what:'home', how:'home', course:'course', lesson:'course', journal:'journal'}[v];
   document.querySelectorAll('.tab').forEach(b=>{ if(b.dataset.tab===tabOf) b.setAttribute('aria-current','page'); else b.removeAttribute('aria-current'); });
-  $('#backBtn').hidden = !(v==='what'||v==='how'||v==='lesson');
+  $('#backBtn').hidden = !(v==='what'||v==='how'||v==='lesson'||v==='plan');
   $('#sizer').hidden = !(v==='what'||v==='how'||v==='lesson');
-  ({home:viewHome, what:viewWhat, how:viewHow, course:viewCourse, lesson:viewLesson, journal:viewJournal})[v](current.arg);
+  ({home:viewHome, plan:viewPlan, what:viewWhat, how:viewHow, course:viewCourse, lesson:viewLesson, journal:viewJournal})[v](current.arg);
 }
 
 /* ---------- views ---------- */
+function continueCard(){
+  const nx=nextLesson(), s=nx.set, n=doneCount(s.lessons);
+  return `<button class="continue" id="cont" data-id="${nx.id}">
+    <span class="eyebrow">${doneCount()===0?'開始操練':(doneCount()===L.length?'已完成全部神操':'繼續操練')}</span>
+    <strong>${esc(nx.num)}　${esc(nx.title)}</strong>
+    <div class="meter"><i style="width:${n/s.lessons.length*100}%"></i></div>
+    <small>${s.name}　已完成 ${n} / ${s.lessons.length} 篇</small>
+  </button>`;
+}
+function doneInPeriod(){
+  const P=PACES[plan.pace], k = t => P.unit==='day' ? startOfDay(t) : weekStart(t), now=k(Date.now());
+  return planSet().lessons.filter(l=>done[l.id] && k(done[l.id])===now).length;
+}
+function todayCard(){
+  const s=planSet(), P=PACES[plan.pace]||PACES.daily, tot=s.lessons.length, n=doneCount(s.lessons), nx=nextLesson();
+  const unit = P.unit==='day' ? '今天' : '本週';
+  const since = Math.max(0, Math.round((startOfDay(Date.now())-startOfDay(plan.start))/DAY));
+  const period = P.unit==='day' ? `第 ${since+1} 天` : `第 ${Math.floor(since/7)+1} 週`;
+  const meter = `<div class="meter"><i style="width:${n/tot*100}%"></i></div>`;
+  const chg = `<button class="linkbtn" id="chg">更改操練計劃</button>`;
+  if(n===tot) return `<button class="continue" id="cont" data-id="${s.lessons[0].id}">
+      <span class="eyebrow">${s.name}・已全部完成</span><strong>願天主受讚美</strong>${meter}
+      <small>已完成 ${tot} / ${tot} 篇。可以按這裡重溫，或在「筆記」頁回顧天主給你的光照。</small></button>${chg}`;
+  const did=doneInPeriod(), left=Math.max(0, P.per-did);
+  const after=Math.max(0, (tot-n)-left), periods=Math.ceil(after/P.per);
+  const fin=new Date(startOfDay(Date.now()) + periods*(P.unit==='day'?1:7)*DAY);
+  let eyebrow, small;
+  if(left>0){
+    eyebrow = `${P.name}・${period}・${unit}的操練`;
+    small = `${P.per>1?`${unit}還有 ${left} 篇　`:''}已完成 ${n} / ${tot} 篇　預計${fin.getMonth()+1}月${fin.getDate()}日完成`;
+  } else {
+    eyebrow = `${P.name}・${period}・${unit}的操練已完成`;
+    small = `下一篇可以${P.unit==='day'?'明天':'下週'}再做；如願意，也可以現在開始。已完成 ${n} / ${tot} 篇`;
+  }
+  let rep = '';
+  if(left===0){
+    const last = s.lessons.filter(l=>done[l.id]).sort((a,b)=>String(done[b.id]).localeCompare(String(done[a.id])))[0];
+    const m = last && journal[last.id] && journal[last.id].mood;
+    if(m==='c' || m==='d') rep = `<button class="glink" id="rep" data-id="${last.id}"><b>重複默想：${esc(last.title)}</b><span>你在這篇中感到${MOOD_NAME[m]}。聖依納爵建議重複默想，回到最觸動你的地方，在那裡多停留［神操 62、118］。</span></button>`;
+  }
+  return `<button class="continue" id="cont" data-id="${nx.id}">
+      <span class="eyebrow">${eyebrow}</span><strong>${esc(nx.num)}　${esc(nx.title)}</strong>${meter}<small>${small}</small></button>${rep}${chg}`;
+}
 function viewHome(){
   $('#topTitle').textContent='神操';
-  const nx=nextLesson(), s=nx.set, n=doneCount(s.lessons), all=n===s.lessons.length;
+  const im=installMode(), nb=needBackup();
   app.innerHTML = `<div class="view">
     <section class="hero">
       <div class="hero-l">
@@ -297,16 +425,15 @@ function viewHome(){
           <span class="eyebrow">聖依納爵·羅耀拉</span>
           <p class="lead">「神操是為戰勝自己，整頓自己的生命，不讓任何私欲偏情影響自己作決定。」<br><span class="amdg">［神操 21］</span></p>
         </div>
-        <button class="continue" id="cont">
-          <span class="eyebrow">${doneCount()===0?'開始操練':(doneCount()===L.length?'已完成全部神操':'繼續操練')}</span>
-          <strong>${esc(nx.num)}　${esc(nx.title)}</strong>
-          <div class="meter"><i style="width:${n/s.lessons.length*100}%"></i></div>
-          <small>${s.name}　已完成 ${n} / ${s.lessons.length} 篇</small>
-        </button>
+        ${plan ? todayCard() : continueCard()}
       </div>
       <div class="hero-r"><h2 class="hero-v">神操</h2><span class="hero-sub">聖依納爵神操</span></div>
     </section>
-    ${showInstallHint()?`<div class="install"><b>加到主畫面</b>在 Safari 按下方的「分享」按鈕，再選「加入主畫面」，以後便可像應用程式一樣打開，沒有網絡也能使用。<button class="install-x" id="instX" aria-label="關閉">×</button></div>`:''}
+    ${plan?'':`<button class="glink" id="gPlan" style="width:100%;margin-bottom:1rem"><b>設定我的操練計劃</b><span>選擇退省或日常生活的節奏，之後首頁會告訴你今天該做哪一篇。</span></button>`}
+    ${im?`<div class="install"><b>加到主畫面</b>${im==='prompt'
+      ? '安裝後可像應用程式一樣打開，沒有網絡也能使用，筆記也保存得更穩妥。<div class="row"><button class="btn primary" id="instGo">安裝</button></div>'
+      : '在 Safari 按下方的「分享」按鈕，再選「加入主畫面」。以後便可像應用程式一樣打開，沒有網絡也能使用；筆記也不會因為一段時間沒有打開而被瀏覽器清除。'}<button class="install-x" id="instX" aria-label="稍後再提醒">×</button></div>`:''}
+    ${nb?`<div class="install"><b>備份你的筆記</b>你已寫了 ${nb} 篇筆記（${lastBackupText()}）。筆記只保存在這部裝置，換手機或瀏覽器清除資料時會遺失。<div class="row"><button class="btn primary" id="bkGo">立即備份</button></div><button class="install-x" id="bkX" aria-label="稍後再提醒">×</button></div>`:''}
     <h3 class="sec-title">開始之前</h3>
     <div class="guide-links">
       <button class="glink" id="gWhat"><b>什麼是神操？</b><span>作者、目的，以及神操在教會中的影響</span></button>
@@ -317,9 +444,42 @@ function viewHome(){
       ${SETS.map(s=>`<button class="glink" data-set="${s.id}"><b>${s.name}</b><span>${s.lessons.length} 篇　已完成 ${doneCount(s.lessons)} 篇</span></button>`).join('')}
     </div>
   </div>`;
-  $('#cont').onclick=()=>go('lesson', nx.id);
-  const ix=$('#instX'); if(ix) ix.onclick=()=>{ store.set('hideInstall',1); ix.parentElement.remove(); };
+  const c=$('#cont'); if(c) c.onclick=()=>go('lesson', c.dataset.id);
+  const r=$('#rep'); if(r) r.onclick=()=>go('lesson', r.dataset.id);
+  const ch=$('#chg'); if(ch) ch.onclick=()=>go('plan');
+  const gp=$('#gPlan'); if(gp) gp.onclick=()=>go('plan');
+  const ix=$('#instX'); if(ix) ix.onclick=()=>{ store.set('hideInstall', Date.now()); ix.parentElement.remove(); };
+  const ig=$('#instGo'); if(ig) ig.onclick=()=>{ const e=bip; if(!e) return; e.prompt(); (e.userChoice||Promise.resolve()).then(()=>{ bip=null; render(); }); };
+  const bg=$('#bkGo'); if(bg) bg.onclick=exportBackup;
+  const bx=$('#bkX'); if(bx) bx.onclick=()=>{ store.set('backupNag', Date.now()); bx.parentElement.remove(); };
   $('#gWhat').onclick=()=>go('what'); $('#gHow').onclick=()=>go('how'); app.querySelectorAll('[data-set]').forEach(b=>b.onclick=()=>go('course', b.dataset.set));
+}
+
+function viewPlan(){
+  $('#topTitle').textContent='我的操練計劃';
+  const sel = {set: plan ? plan.set : SETS[0].id, pace: plan && PACES[plan.pace] ? plan.pace : 'daily'};
+  const draw = () => {
+    const s=SETS.find(x=>x.id===sel.set) || SETS[0], tot=s.lessons.length;
+    const cnt = (x,k) => x.lessons.filter(l=>l.kind===k).length;
+    app.innerHTML = `<div class="view">
+      <p style="font-family:var(--f-body);line-height:1.85;margin-top:0">聖依納爵按各人的處境，安排不同的操練方式［神操 18–20］。選好內容和節奏之後，首頁會告訴你今天該做哪一篇，並記住你的進度。</p>
+      <h3 class="sec-title">內容</h3>
+      <div class="opts">${SETS.map(x=>`<button class="opt ${x.id===sel.set?'on':''}" data-set="${x.id}"><b>${x.name}</b><span>${x.lessons.length} 篇：${cnt(x,'默想要點')} 篇默想、${cnt(x,'主題講解')} 篇講解　已完成 ${doneCount(x.lessons)} 篇</span></button>`).join('')}</div>
+      <h3 class="sec-title">節奏</h3>
+      <div class="opts">${Object.entries(PACES).map(([k,P])=>`<button class="opt ${k===sel.pace?'on':''}" data-pace="${k}"><b>${P.name}</b><span>${P.desc}全部約需 ${Math.ceil(tot/P.per)} ${P.unit==='day'?'天':'週'}。</span></button>`).join('')}</div>
+      <p style="color:var(--muted);font-size:.85rem;margin:1rem 0 0;line-height:1.7">節奏是幫助，不是規條。若某天未能操練，不必自責，下一次繼續便是。</p>
+      <div class="row" style="margin-top:1rem"><button class="btn primary" id="pSave">${plan?'更新計劃':'開始這個計劃'}</button>${plan?'<button class="linkbtn" id="pDel">不使用計劃</button>':''}</div>
+    </div>`;
+    app.querySelectorAll('[data-set]').forEach(b=>b.onclick=()=>{ sel.set=b.dataset.set; draw(); });
+    app.querySelectorAll('[data-pace]').forEach(b=>b.onclick=()=>{ sel.pace=b.dataset.pace; draw(); });
+    $('#pSave').onclick=()=>{
+      const fresh = !plan || plan.set!==sel.set;
+      plan = {set:sel.set, pace:sel.pace, start: fresh ? new Date().toISOString() : plan.start};
+      store.set('plan', plan); history_.length=0; go('home', null, false); toast('計劃已設定');
+    };
+    const d=$('#pDel'); if(d) d.onclick=()=>{ plan=null; store.set('plan', null); history_.length=0; go('home', null, false); };
+  };
+  draw();
 }
 
 function viewCourse(setId){
@@ -352,17 +512,22 @@ function viewHow(){
 
 function viewJournal(){
   $('#topTitle').textContent='默想筆記';
-  const ids = L.filter(l=>journal[l.id] && journal[l.id].text.trim());
+  const ids = L.filter(l=>journal[l.id] && ((journal[l.id].text||'').trim() || journal[l.id].mood));
   app.innerHTML = `<div class="view">
     <div class="set-head"><h2 style="font-family:var(--f-display);font-weight:400;font-size:1.6rem;margin:0">默想筆記</h2>
       ${ids.length?'<button class="btn" id="copyAll">複製全部</button>':''}</div>
-    <p style="color:var(--muted);font-size:.85rem;margin:.25rem 0 1rem">筆記只保存在這部裝置的瀏覽器內，不會上載。如需保存，請用「複製全部」貼到其他地方。</p>
-    ${ids.length? ids.map(l=>`<div class="entry"><div class="entry-h"><b><span style="font-size:.75em;color:var(--muted)">${l.set.name} ${l.num}</span>　${esc(l.title)}</b><span>${fmtDate(journal[l.id].at)}</span></div><p>${esc(journal[l.id].text)}</p><div class="row"><button class="btn" data-open="${l.id}">打開這篇</button></div></div>`).join('')
+    <div class="install" style="padding-right:1rem;margin-top:.75rem"><b>備份筆記</b>筆記和進度只保存在這部裝置的瀏覽器內，不會上載。換手機、清除瀏覽器資料，或（未加到主畫面時）長時間沒有打開，筆記都可能遺失。請定期備份。
+      <div class="saved" style="margin-top:.4rem">${lastBackupText()}</div>
+      <div class="row"><button class="btn primary" id="bExport">備份到檔案</button><button class="btn" id="bImport">從備份還原</button><input type="file" id="bFile" accept=".json,application/json" hidden></div></div>
+    ${ids.length? ids.map(l=>{ const j=journal[l.id]; return `<div class="entry"><div class="entry-h"><b><span style="font-size:.75em;color:var(--muted)">${l.set.name} ${l.num}</span>　${esc(l.title)}</b><span>${moodChip(j.mood)}${fmtDate(j.at)}</span></div>${(j.text||'').trim()?`<p>${esc(j.text)}</p>`:''}<div class="row"><button class="btn" data-open="${l.id}">打開這篇</button></div></div>`; }).join('')
       : `<div class="empty">還沒有筆記。<br>每篇默想之後，可在「考查默想」寫下天主在祈禱中給你的光照。</div>`}
   </div>`;
   app.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>go('lesson', b.dataset.open));
+  $('#bExport').onclick=exportBackup;
+  $('#bImport').onclick=()=>$('#bFile').click();
+  $('#bFile').onchange=e=>{ const f=e.target.files[0]; if(f) importBackup(f); e.target.value=''; };
   const c=$('#copyAll'); if(c) c.onclick=()=>{
-    const txt = ids.map(l=>`${l.set.name} ${l.num} ${l.title}（${fmtDate(journal[l.id].at)}）\n${journal[l.id].text}`).join('\n\n');
+    const txt = ids.map(l=>{ const j=journal[l.id]; return `${l.set.name} ${l.num} ${l.title}（${fmtDate(j.at)}${j.mood?'・'+MOOD_NAME[j.mood]:''}）\n${j.text||''}`; }).join('\n\n');
     navigator.clipboard.writeText(txt).then(()=>toast('已複製'),()=>toast('無法複製，請手動選取文字'));
   };
 }
@@ -440,10 +605,29 @@ function stopTimer(){ if(tState.run){ clearInterval(tState.run); tState.run=null
 function releaseLock(){ try{ tState.lock && tState.lock.release(); }catch(e){} tState.lock=null; }
 
 /* ---------- review / journal ---------- */
+function counselHTML(m){
+  const rules = RULES ? `<button class="linkbtn" data-rules>閱讀〈${esc(RULES.title)}〉全文</button>` : '';
+  if(m==='c') return `<div class="counsel"><h5>在神慰中</h5>
+    <p>感謝天主。聖依納爵勸告：在神慰時，要想想將來神枯時應如何自處，為那時積蓄力量；也要謙下自己，記得這是天主白白的恩賜［神操 323–324］。</p>
+    <p>下次可以<strong>重複這篇默想</strong>，回到你最感受到神慰的那一點，在那裡多停留［神操 62、118］。</p>${rules}</div>`;
+  if(m==='d') return `<div class="counsel"><h5>在神枯中</h5><ul>
+    <li><strong>不要改變決定。</strong>在神枯時，不要改變先前在神慰中所作的決定和定志，要堅持下去［神操 318］。</li>
+    <li><strong>更加努力。</strong>不要縮短默想時間，反而要多一點祈禱、默想和省察［神操 13、319］。</li>
+    <li><strong>天主仍與你同在。</strong>雖然感覺不到，天主的恩寵仍足夠你抵抗誘惑［神操 320］。</li>
+    <li><strong>忍耐。</strong>相信神慰很快會再來［神操 321］。</li></ul>
+    <p>神枯可能是因為自己鬆懈，也可能是天主在考驗我們，或要讓我們明白一切都是恩賜［神操 322］。下次可以重複這篇默想［神操 62］。</p>${rules}</div>`;
+  return `<div class="counsel"><h5>沒有明顯的感受</h5>
+    <p>當人在操練中沒有感到神慰或神枯，聖依納爵提醒要檢查操練是否按時、按方法進行［神操 6］：</p>
+    <ul><li>有沒有找一個安靜的地方，在固定的時間開始？</li><li>有沒有認真做預備經、定像和求恩？</li><li>有沒有做足整段默想時間？</li></ul>
+    <p>平淡的祈禱也是忠信的祈禱。如果情況持續，可以和神師或神父談談。</p></div>`;
+}
 function reviewHTML(l, j){
   return `<p>默想完畢後，或坐或散步，用一刻鐘省察默想的情形：如果默想得不好，查找原因，痛悔並定志改善；如果默想得好，感謝我們的主天主，下次照樣去做。［神操 77］</p>
   <div class="review">
     <ol><li>默想進行得怎樣？我有沒有按照預備經、定像、求恩去做？</li><li>哪一句話或哪一點最觸動我？</li><li>我感到神慰還是神枯？天主給了我什麼光照？</li><li>我在對禱中對主說了什麼？下次要改善什麼？</li></ol>
+    <label>這次默想，我主要感到：</label>
+    <div class="moods">${MOODS.map(m=>`<button class="mood ${j.mood===m.k?'on':''}" data-m="${m.k}" aria-pressed="${j.mood===m.k}">${m.name}</button>`).join('')}</div>
+    <div id="counsel">${j.mood?counselHTML(j.mood):''}</div>
     <label for="jt">我的筆記</label>
     <textarea id="jt" placeholder="寫下這次默想的收穫……">${esc(j.text||'')}</textarea>
     <div class="row">
@@ -452,13 +636,26 @@ function reviewHTML(l, j){
     </div>
   </div>`;
 }
+function bindCounsel(){ const r=app.querySelector('[data-rules]'); if(r && RULES) r.onclick=()=>go('lesson', RULES.id); }
 function bindReview(l){
   const t=$('#jt'); let tm;
-  t.oninput=()=>{ clearTimeout(tm); tm=setTimeout(()=>{ journal[l.id]={text:t.value, at:new Date().toISOString()}; store.set('journal',journal); $('#saved').textContent='已保存'; },500); };
+  const save = (extra={}) => {
+    const e = Object.assign({}, journal[l.id]||{}, {text:t.value, at:new Date().toISOString()}, extra);
+    if(!e.mood) delete e.mood;
+    journal[l.id]=e; store.set('journal',journal); $('#saved').textContent='已保存';
+  };
+  t.oninput=()=>{ clearTimeout(tm); tm=setTimeout(()=>save(),500); };
+  app.querySelectorAll('.mood').forEach(b=>b.onclick=()=>{
+    const cur=(journal[l.id]||{}).mood, m = cur===b.dataset.m ? null : b.dataset.m;
+    save({mood:m});
+    app.querySelectorAll('.mood').forEach(x=>{ x.classList.toggle('on', x.dataset.m===m); x.setAttribute('aria-pressed', x.dataset.m===m); });
+    $('#counsel').innerHTML = m ? counselHTML(m) : ''; bindCounsel();
+  });
+  bindCounsel();
   const b=$('#markDone');
   if(done[l.id]) b.classList.remove('primary');
   b.onclick=()=>{
-    if(t.value.trim()){ journal[l.id]={text:t.value, at:new Date().toISOString()}; store.set('journal',journal); }
+    if(t.value.trim()) save();
     if(done[l.id]){ delete done[l.id]; store.set('done',done); b.textContent='完成這篇默想'; b.classList.add('primary'); toast('已標示為未完成'); return; }
     done[l.id]=new Date().toISOString(); store.set('done',done);
     b.textContent='已完成這篇'; b.classList.remove('primary');
@@ -467,7 +664,8 @@ function bindReview(l){
 }
 
 const WHAT = "<h2>什麼是神操？<\/h2>\n<p>我們深信，將生命中的時間，奉獻給祈禱和退省，是非常有益的，所以我們邀請您，按照聖依納爵的方法做神操；神操不僅是「另一種退省」，而是自成一格，有其特殊方法，超絕出眾的退省；因此得到教會的廣泛推薦。<\/p>\n<p>為把神操理解得更透徹，請看以下三個問題的答案：<\/p>\n<ul class=\"toc-q\">\n<li><button data-jump=\"w1\">1. 神操是誰寫的？<\/button><\/li>\n<li><button data-jump=\"w2\">2. 神操的目的是什麼？<\/button><\/li>\n<li><button data-jump=\"w3\">3. 神操如何影響教會與歷史？<\/button><\/li>\n<\/ul>\n<h3 id=\"w1\">1. 神操的作者……<\/h3>\n<p>是聖依納爵·羅耀拉，耶穌會會祖。<\/p>\n<p>聖依納爵在 19 年（1522-1541 年）期間，創作了《神操》，從那時起便一直是聖化教會成員的最有力方法之一，無論是平信徒還是修道人。教宗碧岳三世在他的聲明中，很清楚地表達這一點：「我們發現，這些神操充滿了虔誠和神聖，對信徒的屬靈利益非常有用且有益……我們真誠地勸告所有人和每一位男女信徒，隨處使用如此虔誠的指導和神操，並接受其指導。」（Pastoralis Officii《有關牧職》31-VII-1548）<\/p>\n<h3 id=\"w2\">2. 神操追求的目的……<\/h3>\n<p>可以用聖依納爵自己為其書所寫的標題和說明來總結：「神操是為戰勝自己，整頓自己的生命，不讓任何私欲偏情影響自己作決定。」［神操 21］<\/p>\n<p>聖依納爵在整本神操書中，只在探求，人如何努力根據天主的計畫整頓自己的生命，亦即人要追求自己的聖德。聖依納爵的神操提供我們實際的方法，幫助我們瞭解如何活出聖德，到達最完美的境界。神操教授純全的聖德，取自我主耶穌基督的教導和榜樣。<\/p>\n<p>為了達到神操所追求的目的，操練者的熱衷委身，與帶領者對於聖依納爵在其小書中所寫的指示之忠誠，一樣重要。保祿六世在這方面說：「在帶領平信徒退省的各種值得稱讚的方法中，以聖依納爵神操為基礎的方法，自1548年教宗保祿三世批准以來，使用得最廣泛。然而，帶領退省者應該持續不斷地加深理解依納爵的方法。」<\/p>\n<blockquote>「以創新作法淡化神操退省是錯誤的，這將降低此靜默式退省的有效性。那些活動，例如團體動力、信仰分享和宗教社會學研討會，在教會中佔有一席之地，但那席地並不在靜默式的退省中；在這裡，靈魂與天主獨處，慷慨地敞開與他相遇，並被奇妙的加強和光照。」<br>（聖保祿六世，致庫欣樞機的信，1969 年 7 月 25 日）<\/blockquote>\n<h3 id=\"w3\">3. 神操在教會和歷史中的影響<\/h3>\n<p>神操一書的傳播，是其他克修書所無法迄及的。單獨出書或附上註釋，出版超過4800次，被翻譯超過19種語言，包括阿茲特克語、丹麥語、馬達加斯加語、泰米爾語、巴斯克語等。而在上世紀（廿世紀）中葉，至少可以計算出四百萬份副本。<\/p>\n<blockquote>「我希望神父、修道人和平信徒繼續忠於這種體驗，並加以發揚：我向所有真誠尋求真理的人發出邀請。神操學校對於現代人的罪惡，始終是一劑良藥，現代人被人類滄桑的旋風拖著，活在自己之外，過度受外物吸引；但願神操成為鍛造新人、鍛造正宗基督徒、鍛造忠誠的使徒。我將這願望委託聖母代禱，她是卓越的默觀者，神操的明智老師。」<br>（教宗聖若望保祿二世，1979 年 12 月 16 日，三鐘經）<\/blockquote>\n<div class=\"trio\">\n<div><b>作者<\/b>聖依納爵·羅耀拉<\/div>\n<div><b>目的<\/b>尋找和發現天主對我生命的旨意：成聖<\/div>\n<div><b>影響<\/b>使我整頓生命，認出並驅除「私慾偏情」<\/div>\n<\/div>\n<p><button class=\"btn primary\" id=\"toHow\">下一步：如何使用本應用程式做神操<\/button><\/p>\n";
-const HOW = "<h2>如何使用本應用程式做神操？<\/h2>\n<p>典型神操設想的是30天的操練，但聖依納爵自己也提供了一些改編。<\/p>\n<p>通常，改編的神操是提供三天的簡易版，其中包含聖依納爵提供的基本默想和規則。他明白，並非所有人都能夠將自己的生活，擱置整整一個月，以進行操練；因此，甚至聖依納爵在世時，也為較短的退省提供方便。<\/p>\n<p>最好是在退省和靜默中做神操，但我們也相信，我們這作法甚好：改編神操以適應現代世界，並透過這個應用程式，把神操帶給那些無法以任何其他方式接觸它的人。<\/p>\n<p>但是，<strong>如何透過應用程式進行這些神聖的操練呢？<\/strong>首先要記住，用手機或電腦做神操並不意味著「不真實」，而只是有一個螢幕在我們中間。本應用程式為每一篇提供文字材料，按神操的步驟編排：先呼求聖神，然後是預備經、定像、求恩、默想、對禱，最後是考查默想。<\/p>\n<h3>第一步：選擇方式<\/h3>\n<p>我們當做的第一件事，是根據我們可用的時間，選擇一個方式：<\/p>\n<div class=\"choice\">\n<div><b>退省<\/b>意味著有整整幾天，<strong>完全<\/strong>獻給天主，遠離任何外在干擾（3天、5天、8天……）。<\/div>\n<div><b>日常生活<\/b>在平常生活的忙碌中，投入至少<strong>每天一小時，或一週至少三天一小時<\/strong>，奉獻給天主，同時繼續我們的日常工作。<\/div>\n<\/div>\n<h3>第二步：每次操練<\/h3>\n<p>我入靜，在一天中最適合我的時間（日常生活神操）或為我安排的時間表（退省神操），然後在「神操」頁打開相應的一篇，慢慢閱讀。建議按次序進行，應用程式會記住你已完成的篇章。<\/p>\n<p>如果是「<strong>主題講解<\/strong>」（例如〈神操介紹〉），閱讀並反省之後，這次操練便結束。如果是「<strong>默想要點<\/strong>」，在閱讀要點之後，我會進行至少 30 分鐘的<strong>個人默想<\/strong>，按照以下步驟：<\/p>\n<ol class=\"method\">\n<li><h4>預備（一開始簡短地）<\/h4>\n<ul>\n<li>誦念神操<strong>預備經<\/strong>，來到上主面前：「求我們的主天主，賜我恩寵，讓我所有的意向、行動和運作，純粹都是為了事奉與讚美至尊的天主。」［神操 46］<\/li>\n<li><strong>前導：<\/strong>聖依納爵提出一個場景或歷史，供我們默想或靜觀，就是要「<strong>定像<\/strong>」：設想一個地點，有時要「<strong>使用感官<\/strong>」：意即想像一個具體空間，以及那裡所能看見、聽見、聞到等五官所能感受的東西。<\/li>\n<li><strong>求恩：<\/strong>藉此默想或靜觀，向天主祈求我所願望獲得的恩典。<\/li>\n<\/ul><\/li>\n<li><h4>默想本身（30分鐘）<\/h4>每篇「默想」部分的開頭有一個默想計時器。開始後可以放下手機，專心祈禱；時間到時會輕輕鳴鐘。<\/li>\n<li><h4>結論：對禱<\/h4>對禱應是真正的談話，就如朋友與朋友，僕人與主人談心一樣。每篇的「對禱」部分會提示該如何對禱。<\/li>\n<li><h4>考查默想<\/h4>默想完畢後，用一刻鐘省察默想的情形［神操 77］。每篇最後都有「考查默想」的問題和筆記欄，你寫下的筆記會保存在「筆記」頁。<\/li>\n<\/ol>\n<p style=\"font-size:.85em;color:var(--muted)\">筆記和進度只保存在你這部裝置的瀏覽器內，不會上載或與他人分享。<\/p>\n<p><button class=\"btn primary\" id=\"toStart\">開始操練<\/button><\/p>\n";
+const HOW = "<h2>如何使用本應用程式做神操？<\/h2>\n<p>典型神操設想的是30天的操練，但聖依納爵自己也提供了一些改編。<\/p>\n<p>通常，改編的神操是提供三天的簡易版，其中包含聖依納爵提供的基本默想和規則。他明白，並非所有人都能夠將自己的生活，擱置整整一個月，以進行操練；因此，甚至聖依納爵在世時，也為較短的退省提供方便。<\/p>\n<p>最好是在退省和靜默中做神操，但我們也相信，我們這作法甚好：改編神操以適應現代世界，並透過這個應用程式，把神操帶給那些無法以任何其他方式接觸它的人。<\/p>\n<p>但是，<strong>如何透過應用程式進行這些神聖的操練呢？<\/strong>首先要記住，用手機或電腦做神操並不意味著「不真實」，而只是有一個螢幕在我們中間。本應用程式為每一篇提供文字材料，按神操的步驟編排：先呼求聖神，然後是預備經、定像、求恩、默想、對禱，最後是考查默想。<\/p>\n<h3>第一步：選擇方式<\/h3>\n<p>我們當做的第一件事，是根據我們可用的時間，選擇一個方式：<\/p>\n<div class=\"choice\">\n<div><b>退省<\/b>意味著有整整幾天，<strong>完全<\/strong>獻給天主，遠離任何外在干擾（3天、5天、8天……）。<\/div>\n<div><b>日常生活<\/b>在平常生活的忙碌中，投入至少<strong>每天一小時，或一週至少三天一小時<\/strong>，奉獻給天主，同時繼續我們的日常工作。<\/div>\n<\/div>\n<p>選好之後，在首頁按「<strong>設定我的操練計劃<\/strong>」。應用程式會按你選擇的節奏，告訴你今天該做哪一篇。<\/p>\n<h3>第二步：每次操練<\/h3>\n<p>我入靜，在一天中最適合我的時間（日常生活神操）或為我安排的時間表（退省神操），然後在「神操」頁打開相應的一篇，慢慢閱讀。建議按次序進行，應用程式會記住你已完成的篇章。<\/p>\n<p>如果是「<strong>主題講解<\/strong>」（例如〈神操介紹〉），閱讀並反省之後，這次操練便結束。如果是「<strong>默想要點<\/strong>」，在閱讀要點之後，我會進行至少 30 分鐘的<strong>個人默想<\/strong>，按照以下步驟：<\/p>\n<ol class=\"method\">\n<li><h4>預備（一開始簡短地）<\/h4>\n<ul>\n<li>誦念神操<strong>預備經<\/strong>，來到上主面前：「求我們的主天主，賜我恩寵，讓我所有的意向、行動和運作，純粹都是為了事奉與讚美至尊的天主。」［神操 46］<\/li>\n<li><strong>前導：<\/strong>聖依納爵提出一個場景或歷史，供我們默想或靜觀，就是要「<strong>定像<\/strong>」：設想一個地點，有時要「<strong>使用感官<\/strong>」：意即想像一個具體空間，以及那裡所能看見、聽見、聞到等五官所能感受的東西。<\/li>\n<li><strong>求恩：<\/strong>藉此默想或靜觀，向天主祈求我所願望獲得的恩典。<\/li>\n<\/ul><\/li>\n<li><h4>默想本身（30分鐘）<\/h4>每篇「默想」部分的開頭有一個默想計時器。開始後可以放下手機，專心祈禱；時間到時會輕輕鳴鐘。<\/li>\n<li><h4>結論：對禱<\/h4>對禱應是真正的談話，就如朋友與朋友，僕人與主人談心一樣。每篇的「對禱」部分會提示該如何對禱。<\/li>\n<li><h4>考查默想<\/h4>默想完畢後，用一刻鐘省察默想的情形［神操 77］。每篇最後都有「考查默想」的問題和筆記欄，你寫下的筆記會保存在「筆記」頁。記下你感到<strong>神慰<\/strong>還是<strong>神枯<\/strong>，應用程式會按聖依納爵辨別神類的規則，給你一些提醒。<\/li>\n<\/ol>\n<p style=\"font-size:.85em;color:var(--muted)\">筆記和進度只保存在你這部裝置的瀏覽器內，不會上載或與他人分享。請不時在「筆記」頁按「備份到檔案」，以免換手機時遺失。<\/p>\n<p><button class=\"btn primary\" id=\"toStart\">開始操練<\/button><\/p>\n";
+try{ navigator.storage && navigator.storage.persist && navigator.storage.persist().catch(()=>{}); }catch(e){}
 go('home', null, false);
 </script>
 

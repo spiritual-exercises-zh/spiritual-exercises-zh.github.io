@@ -1,5 +1,5 @@
 // 神操 PWA service worker. Bump VERSION whenever index.html changes so phones pick up the new version.
-const VERSION = 'shencao-20261122-2153';
+const VERSION = 'shencao-20261122-2222';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 const FONTS = 'shencao-fonts';
 
